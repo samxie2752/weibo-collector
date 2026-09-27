@@ -3,6 +3,8 @@
 [![CI](https://github.com/samxie2752/weibo-collector/actions/workflows/ci.yml/badge.svg)](https://github.com/samxie2752/weibo-collector/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> **English** — A local web tool that crawls the **complete post history of any public Weibo account** by user_id: resumable crawling, incremental monitoring, live progress UI, CSV export. 100% local (FastAPI + SQLite), polite rate-limiting built in. Jump to the [English section](#english).
+
 本地 Web 小工具：填入 user_id，自动抓取任意公开微博账号的**全部历史微博**，存入本地 SQLite，页面上实时查看采集进度与内容，支持断点续采、增量更新、后台监控新微博、一键导出 CSV。
 
 > ⚠️ **合规声明**：本项目仅用于个人备份与学习研究，只采集公开可见内容，不做任何登录凭据破解或反爬绕过。使用请遵守《微博服务使用协议》及相关法律法规，自行控制频率，勿用于商业用途。本项目与微博官方无关，产生的数据请勿二次分发。
@@ -118,6 +120,17 @@ scripts/selftest.py 离线自测（mock HTTP，50 项断言，CI 跑的就是它
 - 采不到"仅自己可见"和已删除的微博；数量缺口通常是这部分
 - Cookie 有效期约 3 个月，失效后换新即可（工具会停在验证状态引导你）
 - 历史很久的账号全量采集约 1.5~2.5 小时（页间延迟是刻意的防封措施）
+
+## English
+
+**weibo-collector** is a local web tool for backing up the complete public post history of any Weibo account.
+
+- Enter a user_id and a login cookie, and it crawls every public post (2009 → today) into a per-account SQLite database — viewable live in the built-in web UI and exportable to CSV.
+- Crawling is **resumable** (breakpoint metadata stored in SQLite), supports **incremental updates**, and can **monitor accounts** for new posts in the background (≥ 60s interval).
+- Anti-ban by design: randomized delays, global throttling, session caps with long rests, escalating cooldowns with time decay, and fingerprint rotation. No captcha solving, no login-bypass — you log in once in your own browser and the tool reuses your session.
+- 100% local: the server only binds 127.0.0.1 and your cookie never leaves the machine.
+
+Quick start: `pip install -r requirements.txt`, run `uvicorn app.main:app`, open `http://127.0.0.1:8765`. See [快速开始](#快速开始) for details. Licensed under [MIT](LICENSE) — for personal backup and research only.
 
 ## 致谢
 
