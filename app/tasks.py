@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from . import crawler
+from . import media as media_mod
 from . import monitor as monitor_mod
 from .store import Store
 
@@ -148,8 +149,9 @@ class TaskManager:
         task.state = "running"
         task.error = ""
         started_at = time.time()
-        # 采集期间暂停该账号的监控，避免两路请求叠加触发风控
+        # 采集期间暂停该账号的监控与媒体下载，避免多路请求叠加触发风控
         monitor_mod.manager.pause(task.user_id)
+        media_mod.manager.pause(task.user_id)
         self._log(task, f"开始采集用户 {task.user_id}")
         store = None
         try:
@@ -262,6 +264,7 @@ class TaskManager:
             log.error("task %s failed:\n%s", task.id, traceback.format_exc())
         finally:
             monitor_mod.manager.unpause(task.user_id)
+            media_mod.manager.unpause(task.user_id)
             if store:
                 store.close()
 

@@ -24,6 +24,7 @@
 - **后台监控**：定时检查账号时间线头部（60 秒~30 分钟），新微博自动入库并在页面提示
 - **一键续采**：账号卡片展示断点/风控状态，点"继续采集"经三道校验后自动续跑
 - **自动获取 Cookie**：弹出浏览器窗口登录一次，Cookie 自动捕获、保存、复用（Playwright 半自动）
+- **图片下载**：一键把全部微博图片下载到本地 `data/{uid}/media/`，断点续传、失败重试、原子落盘；结果页内嵌缩略图，点击看原图
 - **CSV 导出**：全量数据一键导出，Excel 可直接打开
 - **防封体系**：随机延迟 + 全局节流 + 会话上限自动休息 + 风控冷却时间衰减（详见下文）
 
@@ -87,6 +88,10 @@ python3 -m venv .venv
 | `DELETE /api/accounts/{uid}` | 删除该账号全部本地数据 |
 | `POST /api/accounts/{uid}/monitor` | `{interval_seconds, cookie?}` 开启监控 |
 | `DELETE /api/accounts/{uid}/monitor` | 停止监控 |
+| `POST /api/accounts/{uid}/media` | 启动图片下载（采集任务运行中会拒绝） |
+| `GET /api/accounts/{uid}/media` | 图片下载进度 |
+| `DELETE /api/accounts/{uid}/media` | 取消图片下载 |
+| `GET /api/accounts/{uid}/media/{bid}/{idx}` | 图片文件服务 |
 | `POST /api/cookie/browser` | 弹出浏览器登录页自动捕获 Cookie（`{target_uid?}`） |
 | `GET /api/cookie/browser/{sid}` | 轮询捕获状态：launching/waiting/success/failed |
 
@@ -120,6 +125,7 @@ scripts/selftest.py 离线自测（mock HTTP，50 项断言，CI 跑的就是它
 - 采不到"仅自己可见"和已删除的微博；数量缺口通常是这部分
 - Cookie 有效期约 3 个月，失效后换新即可（工具会停在验证状态引导你）
 - 历史很久的账号全量采集约 1.5~2.5 小时（页间延迟是刻意的防封措施）
+- 媒体只下载**图片**；视频仅记录 URL（微博视频 CDN 风控更敏感且链接带时效，建议后续用 yt-dlp 处理）
 
 ## 免责声明 Disclaimer
 

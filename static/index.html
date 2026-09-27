@@ -51,6 +51,9 @@
   .dot.err { background:#ef4444; animation:none; }
   .dot.warn { background:#f59e0b; animation:none; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .thumbs { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .thumbs img { width:64px; height:64px; object-fit:cover; border-radius:6px;
+                cursor:pointer; border:1px solid var(--border); }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border);
            vertical-align:top; }
@@ -200,6 +203,23 @@ async function refreshAccounts() {
       ? `· ${done ? '已采完（可增量追新）' : `断点第 ${r.last_page || '?'} 页（未采完）`}`
       : '';
     const banTxt = r.ban_count > 0 ? `· 近期风控 ${r.ban_count} 次` : '';
+    const md = a.media;
+    const mediaBtn = `<button class="small ghost" onclick="startMedia('${a.uid}')"
+      ${md && md.state === 'running' ? 'disabled' : ''}>下载图片</button>`;
+    let mbox = '';
+    if (md && md.state === 'running') {
+      mbox = `<div class="mon-box"><span class="dot"></span>图片下载中：${md.downloaded}/${md.total} · 失败 ${md.errors}
+        <button class="small ghost" onclick="stopMedia('${a.uid}')">取消</button></div>`;
+    } else if (md && md.state === 'partial') {
+      mbox = `<div class="mon-box err"><span class="dot err"></span>图片：完成 ${md.downloaded}/${md.total}，失败 ${md.errors}
+        <button class="small ghost" onclick="startMedia('${a.uid}')">重试失败项</button></div>`;
+    } else if (md && md.state === 'failed') {
+      mbox = `<div class="mon-box err"><span class="dot err"></span>图片下载出错：${esc(md.last_error || '')}
+        <button class="small ghost" onclick="startMedia('${a.uid}')">重试</button></div>`;
+    } else if (md && (md.state === 'done' || md.state === 'cancelled')) {
+      mbox = `<div class="mon-box"><span class="dot"></span>图片：已下载 ${md.downloaded} 张（存 data/${a.uid}/media/）
+        <button class="small ghost" onclick="startMedia('${a.uid}')">补齐缺失</button></div>`;
+    }
     return `<div class="acct">
       <div class="row">
         <b>${esc(a.screen_name) || a.uid}</b>
@@ -207,12 +227,27 @@ async function refreshAccounts() {
           ${a.last_weibo_at ? '· 最新 ' + a.last_weibo_at : ''} ${resumeTxt} ${banTxt}</span>
         <button class="small" onclick="continueCollect('${a.uid}')"
           ${a.task_running ? 'disabled title="已有任务进行中"' : ''}>继续采集</button>
+        ${mediaBtn}
         <button class="small ghost" onclick="openAccount('${a.uid}')">查看</button>
         <a href="/api/accounts/${a.uid}/export" download><button class="small ghost">CSV</button></a>
         <button class="small ghost" style="color:#b91c1c;border-color:#fecaca"
           onclick="deleteAccount('${a.uid}', this)">删除</button>
-      </div>${mon}</div>`;
+      </div>${mon}${mbox}</div>`;
   }).join('');
+}
+
+/* 图片下载 */
+async function startMedia(uid) {
+  const r = await fetch(`/api/accounts/${uid}/media`, {method:'POST'});
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    alert(j.detail || '启动失败');
+  }
+  refreshAccounts();
+}
+async function stopMedia(uid) {
+  await fetch(`/api/accounts/${uid}/media`, {method:'DELETE'});
+  refreshAccounts();
 }
 
 /* 一键断点续采：采集前做校验并展示采集历史 */
@@ -368,18 +403,25 @@ async function loadWeibos() {
         ${u.ip_location ? ' · IP ' + u.ip_location : ''}</div></div>`;
     $('result-title').textContent = `采集结果 — ${u.screen_name}`;
   }
-  $('weibo-body').innerHTML = j.weibos.map(w => `
+  $('weibo-body').innerHTML = j.weibos.map(w => {
+    const thumbs = w.pic_urls ? `<div class="thumbs">${w.pic_urls.split(',').map((u, i) =>
+      `<a href="/api/accounts/${curUid}/media/${w.bid}/${i + 1}" target="_blank" title="查看原图">
+         <img loading="lazy" src="/api/accounts/${curUid}/media/${w.bid}/${i + 1}"
+           onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'rt',textContent:'未下载'}))">
+       </a>`).join('')}</div>` : '';
+    return `
     <tr>
       <td class="t">${w.created_at}</td>
       <td class="text">${esc(w.text)}
         ${w.is_retweet ? `<div class="rt">转发 @${esc(w.retweet_user)}：${esc(w.retweet_text).slice(0,80)}…</div>` : ''}
-        ${w.pic_urls ? `<div class="rt">🖼️ ${w.pic_urls.split(',').length} 张图</div>` : ''}
+        ${thumbs}
         ${w.video_url ? '<div class="rt">🎬 视频</div>' : ''}</td>
       <td class="num">${w.reposts_count}</td>
       <td class="num">${w.comments_count}</td>
       <td class="num">${w.attitudes_count}</td>
       <td class="t">${esc(w.source)}</td>
-    </tr>`).join('') || '<tr><td colspan="6" class="empty">还没有数据</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty">还没有数据</td></tr>';
   const pages = Math.max(1, Math.ceil(curTotal / curSize));
   $('pageinfo').textContent = `${curPage} / ${pages} 页，共 ${curTotal} 条`;
   $('prev').disabled = curPage <= 1;

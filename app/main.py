@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import browserlogin as browserlogin_mod
+from . import media as media_mod
 from . import monitor as monitor_mod
 from . import tasks
 from .store import DATA_DIR, Store, list_account_ids
@@ -94,6 +95,7 @@ def accounts():
                 "statuses_count": user.get("statuses_count", 0),
                 "last_weibo_at": store.last_weibo_at(),
                 "monitor": monitor_mod.manager.info(uid),
+                "media": media_mod.manager.info(uid),
                 # 断点续采信息（风控计数为时间衰减后的有效值）
                 "resume": {
                     "last_page": store.get_meta("last_page"),
@@ -217,3 +219,41 @@ def cookie_browser_cancel(sid: str):
         raise HTTPException(404, "会话不存在或已过期")
     s.cancel()
     return {"ok": True}
+
+
+# ---------- 图片下载 ----------
+
+CONTENT_TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                 "gif": "image/gif", "webp": "image/webp"}
+
+
+@app.post("/api/accounts/{uid}/media")
+def media_start(uid: str):
+    if uid not in list_account_ids():
+        raise HTTPException(404, "账号不存在")
+    running = tasks.manager.running_task_for(uid)
+    if running:
+        raise HTTPException(409, "该账号有采集任务进行中，结束后再下载图片")
+    return media_mod.manager.start(uid).info()
+
+
+@app.get("/api/accounts/{uid}/media")
+def media_status(uid: str):
+    return media_mod.manager.info(uid) or {"uid": uid, "state": "idle",
+                                           "downloaded": 0, "total": 0,
+                                           "errors": 0, "last_error": ""}
+
+
+@app.delete("/api/accounts/{uid}/media")
+def media_stop(uid: str):
+    media_mod.manager.stop(uid)
+    return {"ok": True}
+
+
+@app.get("/api/accounts/{uid}/media/{bid}/{idx}")
+def media_file(uid: str, bid: str, idx: int):
+    path = media_mod.find_media_file(uid, bid, idx)
+    if not path:
+        raise HTTPException(404, "图片未下载")
+    ext = path.rsplit(".", 1)[-1].lower()
+    return FileResponse(path, media_type=CONTENT_TYPES.get(ext, "image/jpeg"))

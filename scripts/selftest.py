@@ -318,5 +318,66 @@ check("会话 info 完整（含 note）",
 s.cancel()
 check("cancel 置位取消标志", s._cancel.is_set())
 
+# ---------- 12. 图片下载 ----------
+
+print("[12] 图片下载")
+import os as _os  # noqa: E402
+from app import media as media_mod  # noqa: E402
+
+check("扩展名解析：jpg 带查询串",
+      media_mod.ext_from_url("https://wx1.sinaimg.cn/large/abc.jpg?&690") == "jpg")
+check("扩展名解析：png", media_mod.ext_from_url("https://x.cn/a/b.png") == "png")
+check("扩展名解析：webp", media_mod.ext_from_url("https://x.cn/a/b.webp") == "webp")
+check("扩展名解析：无扩展名降级 jpg",
+      media_mod.ext_from_url("https://x.cn/a/xyz") == "jpg")
+check("扩展名解析：假扩展名降级 jpg",
+      media_mod.ext_from_url("https://x.cn/a/xyz.php?id=1") == "jpg")
+check("文件名规则",
+      media_mod.media_filename("B1", 2, "https://x.cn/a.jpg?v=1") == "B1_2.jpg")
+
+s3 = Store("888")
+prow = dict(wb_list[0], user_id="888",
+            pic_urls="https://x.cn/a.jpg, https://x.cn/b.png")
+s3.save_weibo(prow)
+s3.save_weibo(dict(wb_list[1], user_id="888", pic_urls=""))
+d = media_mod.media_dir("888")
+_os.makedirs(d, exist_ok=True)
+first = _os.path.join(d, media_mod.media_filename("B2", 1, "https://x.cn/a.jpg"))
+open(first, "wb").write(b"x" * 100)  # 第一张已存在
+jobs = media_mod.collect_jobs("888", s3)
+check("collect_jobs：跳过已有文件和无图微博，只缺 1 张",
+      len(jobs) == 1 and jobs[0][0] == "B2" and jobs[0][1] == 2
+      and jobs[0][2] == "https://x.cn/b.png")
+
+class FakeImgResp:
+    status_code = 200
+    content = b"\xff\xd8" + b"y" * 2000
+    headers = {"Content-Type": "image/jpeg"}
+
+class FakeSession:
+    def get(self, url, **kw): return FakeImgResp()
+
+check("download_one 成功落盘",
+      media_mod.download_one(FakeSession(), "https://x.cn/b.png", jobs[0][3])
+      and _os.path.exists(jobs[0][3]))
+
+class FakeSmallResp:
+    status_code = 200
+    content = b"tiny"
+    headers = {"Content-Type": "image/jpeg"}
+
+orig_retry = media_mod.RETRY
+media_mod.RETRY = 0  # 失败路径不做退避等待
+check("download_one 拒绝反盗链占位小图",
+      media_mod.download_one(FakeSession(), "https://x.cn/c.jpg", "/tmp/never") is False)
+media_mod.RETRY = orig_retry
+
+check("find_media_file 定位已下载文件",
+      media_mod.find_media_file("888", "B2", 2) == jobs[0][3]
+      and media_mod.find_media_file("888", "B2", 1) == first)
+st = media_mod.MediaState("888")
+check("媒体状态 info 完整", st.info()["state"] == "running" and "total" in st.info())
+s3.close()
+
 print(f"\n结果：{PASS} 通过，{FAIL} 失败")
 sys.exit(1 if FAIL else 0)
