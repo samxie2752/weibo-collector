@@ -53,7 +53,15 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .thumbs { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
   .thumbs img { width:64px; height:64px; object-fit:cover; border-radius:6px;
-                cursor:pointer; border:1px solid var(--border); }
+                cursor:zoom-in; border:1px solid var(--border); }
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:100;
+              display:flex; align-items:center; justify-content:center; cursor:zoom-out; }
+  .lightbox.hidden { display:none; }
+  .lightbox img { max-width:92vw; max-height:92vh; border-radius:8px;
+                  box-shadow:0 8px 40px rgba(0,0,0,.5); background:#fff; }
+  .lightbox-close { position:fixed; top:14px; right:18px; margin:0;
+          background:rgba(255,255,255,.15); color:#fff; font-size:20px;
+          padding:4px 14px; border-radius:8px; cursor:pointer; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border);
            vertical-align:top; }
@@ -128,6 +136,11 @@
       <a id="download" href="#" download><button class="ghost">下载 CSV</button></a>
     </div>
   </div>
+</div>
+
+<div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">✕ 关闭</button>
+  <img id="lightbox-img" alt="">
 </div>
 
 <script>
@@ -405,10 +418,10 @@ async function loadWeibos() {
   }
   $('weibo-body').innerHTML = j.weibos.map(w => {
     const thumbs = w.pic_urls ? `<div class="thumbs">${w.pic_urls.split(',').map((u, i) =>
-      `<a href="/api/accounts/${curUid}/media/${w.bid}/${i + 1}" target="_blank" title="查看原图">
-         <img loading="lazy" src="/api/accounts/${curUid}/media/${w.bid}/${i + 1}"
-           onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'rt',textContent:'未下载'}))">
-       </a>`).join('')}</div>` : '';
+      `<img loading="lazy" src="/api/accounts/${curUid}/media/${w.bid}/${i + 1}"
+         onclick="openLightbox('/api/accounts/${curUid}/media/${w.bid}/${i + 1}')"
+         onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'rt',textContent:'未下载'}))">`
+      ).join('')}</div>` : '';
     return `
     <tr>
       <td class="t">${w.created_at}</td>
@@ -430,6 +443,19 @@ async function loadWeibos() {
 }
 
 function turnPage(d) { curPage += d; loadWeibos(); }
+
+/* 图片弹窗（lightbox）：点击缩略图看原图，点任意处/ESC 关闭 */
+function openLightbox(src) {
+  $('lightbox-img').src = src;
+  $('lightbox').classList.remove('hidden');
+}
+function closeLightbox() {
+  $('lightbox').classList.add('hidden');
+  $('lightbox-img').src = '';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('lightbox').classList.contains('hidden')) closeLightbox();
+});
 
 /* ---------- 任务列表 ---------- */
 
