@@ -1,0 +1,10 @@
+services:
+  weibo-collector:
+    build: .
+    container_name: weibo-collector
+    ports:
+      # 只映射到本机回环地址，不对局域网暴露
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

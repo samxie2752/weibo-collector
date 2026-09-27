@@ -379,5 +379,28 @@ st = media_mod.MediaState("888")
 check("媒体状态 info 完整", st.info()["state"] == "running" and "total" in st.info())
 s3.close()
 
+# ---------- 13. Markdown 导出 ----------
+
+print("[13] Markdown 导出")
+s4 = Store("999")
+mrow1 = dict(wb_list[0], user_id="999", created_at="2024-11-08 18:22:54",
+             pic_urls="https://x.cn/a.jpg?x=1",
+             bid="B1", edited=1)
+mrow2 = dict(wb_list[1], user_id="999", created_at="2024-12-01 09:00:00",
+             bid="B2", edited=0)
+s4.save_weibo(mrow1)
+s4.save_weibo(mrow2)
+md_dir = _os.path.join(store_mod.DATA_DIR, "999", "media")
+_os.makedirs(md_dir, exist_ok=True)
+open(_os.path.join(md_dir, "B1_1.jpg"), "wb").write(b"img")
+md_path = s4.export_markdown()
+md = open(md_path, encoding="utf-8").read()
+check("月份分节", "## 2024年11月" in md and "## 2024年12月" in md)
+check("正文与时间小标题", "### 2024-11-08 18:22:54" in md and "内容" in md)
+check("本地图片用相对路径", "![图1](media/B1_1.jpg)" in md)
+check("数据行与编辑标记", "🔁 12000 · 💬 5 · 👍 10 · 来自 iPhone" in md
+      and "*（已编辑）*" in md)
+s4.close()
+
 print(f"\n结果：{PASS} 通过，{FAIL} 失败")
 sys.exit(1 if FAIL else 0)

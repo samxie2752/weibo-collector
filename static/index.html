@@ -243,6 +243,7 @@ async function refreshAccounts() {
         ${mediaBtn}
         <button class="small ghost" onclick="openAccount('${a.uid}')">查看</button>
         <a href="/api/accounts/${a.uid}/export" download><button class="small ghost">CSV</button></a>
+        <a href="/api/accounts/${a.uid}/export.md" download><button class="small ghost">MD</button></a>
         <button class="small ghost" style="color:#b91c1c;border-color:#fecaca"
           onclick="deleteAccount('${a.uid}', this)">删除</button>
       </div>${mon}${mbox}</div>`;

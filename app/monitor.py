@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 from . import crawler
+from . import media as media_mod
 from .store import DATA_DIR, Store
 
 log = logging.getLogger("weibo.monitor")
@@ -176,6 +177,8 @@ class MonitorManager:
                 st.error = ""
                 if new:
                     log.info("monitor %s: +%d new weibos", st.uid, new)
+                    # 全自动备份闭环：新微博入库后自动补下载其图片
+                    media_mod.manager.start(st.uid)
             except crawler.NeedCaptchaError as e:
                 st.status = "captcha"
                 st.error = e.url

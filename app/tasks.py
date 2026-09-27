@@ -228,6 +228,9 @@ class TaskManager:
             # 连续顺利跑满 10 分钟以上，说明当前 Cookie 状态良好，重置风控计数
             if time.time() - started_at >= 600:
                 store.set_meta("ban_count", "0")
+            # 全自动备份闭环：采集完成后自动补下载图片（只补缺失的）
+            if new_count:
+                media_mod.manager.start(task.user_id)
             task.state = "done"
             task.finished_at = datetime.now().strftime("%m-%d %H:%M:%S")
             task.action, task.action_until = "已完成", 0

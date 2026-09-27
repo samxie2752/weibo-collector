@@ -144,6 +144,20 @@ def account_export(uid: str):
                         media_type="text/csv")
 
 
+@app.get("/api/accounts/{uid}/export.md")
+def account_export_markdown(uid: str):
+    """按月分节的 Markdown 时间线（图片优先引用本地文件）。"""
+    if uid not in list_account_ids():
+        raise HTTPException(404, "账号不存在")
+    store = Store(uid)
+    try:
+        path = store.export_markdown()
+    finally:
+        store.close()
+    return FileResponse(path, filename=f"weibo_{uid}.md",
+                        media_type="text/markdown")
+
+
 @app.delete("/api/accounts/{uid}")
 def account_delete(uid: str):
     monitor_mod.manager.stop(uid)

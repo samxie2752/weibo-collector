@@ -49,6 +49,14 @@ _WEIBO_COLUMNS = ["bid", "user_id", "created_at", "text", "source",
                   "location", "is_long", "edited", "is_pinned", "crawled_at"]
 
 
+def _img_ext(url: str) -> str:
+    """与 media.ext_from_url 保持一致的扩展名推断（避免循环导入）。"""
+    path = url.split("?", 1)[0].split("#", 1)[0]
+    name = path.rsplit("/", 1)[-1]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return ext if ext in {"jpg", "jpeg", "png", "gif", "webp"} else "jpg"
+
+
 def db_path(user_id: str) -> str:
     return os.path.join(DATA_DIR, str(user_id), "weibo.db")
 
@@ -158,4 +166,53 @@ class Store:
             writer = csv.writer(f)
             writer.writerow(_WEIBO_COLUMNS)
             writer.writerows(rows)
+        return out
+
+    def export_markdown(self) -> str:
+        """导出按月分节的 Markdown 时间线到 data/{uid}/{uid}.md。
+
+        图片优先引用本地已下载文件（相对路径，本地浏览可直接显示），
+        未下载的降级为远程 URL。
+        """
+        out = os.path.join(DATA_DIR, self.user_id, f"{self.user_id}.md")
+        media_dir = os.path.join(DATA_DIR, self.user_id, "media")
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM weibo WHERE user_id=? ORDER BY created_at ASC",
+                (self.user_id,)).fetchall()
+        by_month: Dict[str, List[Dict]] = {}
+        for r in rows:
+            w = dict(zip(_WEIBO_COLUMNS, r))
+            by_month.setdefault((w["created_at"] or "0000-00")[:7], []).append(w)
+
+        lines = [f"# 微博时间线 — {self.user_id}\n"]
+        for month in sorted(by_month):
+            lines.append(f"\n## {month[:4]}年{int(month[5:7])}月\n")
+            for w in by_month[month]:
+                lines.append(f"\n### {w['created_at']}\n")
+                if w["is_pinned"]:
+                    lines.append("**置顶**\n")
+                lines.append(w["text"] + "\n")
+                if w["is_retweet"]:
+                    lines.append(f"> 转发 @{w['retweet_user']}：{w['retweet_text']}\n")
+                if w["pic_urls"]:
+                    lines.append("")
+                    for idx, url in enumerate(w["pic_urls"].split(","), 1):
+                        url = url.strip()
+                        if not url:
+                            continue
+                        fname = f"{w['bid']}_{idx}.{_img_ext(url)}"
+                        local = os.path.join(media_dir, fname)
+                        link = (f"media/{fname}" if os.path.exists(local)
+                                else url)
+                        lines.append(f"![图{idx}]({link})")
+                    lines.append("")
+                if w["video_url"]:
+                    lines.append(f"[🎬 视频]({w['video_url']})\n")
+                lines.append(f"\n*🔁 {w['reposts_count']} · 💬 {w['comments_count']} · "
+                             f"👍 {w['attitudes_count']} · 来自 {w['source']}*\n")
+                if w["edited"]:
+                    lines.append("*（已编辑）*\n")
+        with open(out, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
         return out

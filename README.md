@@ -24,7 +24,9 @@
 - **后台监控**：定时检查账号时间线头部（60 秒~30 分钟），新微博自动入库并在页面提示
 - **一键续采**：账号卡片展示断点/风控状态，点"继续采集"经三道校验后自动续跑
 - **自动获取 Cookie**：弹出浏览器窗口登录一次，Cookie 自动捕获、保存、复用（Playwright 半自动）
-- **图片下载**：一键把全部微博图片下载到本地 `data/{uid}/media/`，断点续传、失败重试、原子落盘；结果页内嵌缩略图，点击看原图
+- **图片下载**：一键把全部微博图片下载到本地 `data/{uid}/media/`，断点续传、失败重试、原子落盘；结果页内嵌缩略图，点击弹窗看原图
+- **全自动备份闭环**：监控抓到新微博 → 自动入库 → 自动补下载图片；全量采集完成也自动补图。配置一次，永久备份
+- **Markdown 时间线导出**：按月分节的可读版备份（正文+转发+图片+数据），图片优先引用本地文件
 - **CSV 导出**：全量数据一键导出，Excel 可直接打开
 - **防封体系**：随机延迟 + 全局节流 + 会话上限自动休息 + 风控冷却时间衰减（详见下文）
 
@@ -43,6 +45,17 @@ python3 -m venv .venv
 
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
+
+<details>
+<summary><strong>Docker 部署（可选）</strong></summary>
+
+```bash
+docker compose up -d --build
+# 打开 http://127.0.0.1:8765，数据持久化在 ./data/
+```
+容器内不含 Playwright（浏览器登录获取 Cookie 请在宿主机做，或直接粘贴 Cookie）。
+
+</details>
 
 打开 http://127.0.0.1:8765 ：
 
@@ -85,6 +98,7 @@ python3 -m venv .venv
 | `POST /api/accounts/{uid}/continue` | 一键断点续采（校验重复任务与 Cookie 可用性） |
 | `GET /api/accounts/{uid}/weibos?page=` | 分页浏览某账号数据 |
 | `GET /api/accounts/{uid}/export` | 导出 CSV |
+| `GET /api/accounts/{uid}/export.md` | 导出 Markdown 时间线（按月分节） |
 | `DELETE /api/accounts/{uid}` | 删除该账号全部本地数据 |
 | `POST /api/accounts/{uid}/monitor` | `{interval_seconds, cookie?}` 开启监控 |
 | `DELETE /api/accounts/{uid}/monitor` | 停止监控 |
