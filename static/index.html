@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>微博历史采集</title>
+<style>
+  :root { --accent:#e6162d; --bg:#f7f7f8; --border:#e4e4e7; --text:#18181b; --muted:#71717a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--text); }
+  .wrap { max-width:880px; margin:0 auto; padding:24px 16px 80px; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  h1 .logo { color:var(--accent); }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:20px; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:10px;
+          padding:16px; margin-bottom:16px; }
+  label { display:block; font-weight:600; margin:10px 0 4px; font-size:13px; }
+  input, textarea, select { width:100%; border:1px solid var(--border); border-radius:8px;
+          padding:8px 10px; font:inherit; }
+  textarea { height:72px; resize:vertical; font-size:12px; word-break:break-all; }
+  .hint { color:var(--muted); font-size:12px; margin-top:4px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+          padding:8px 20px; font:inherit; font-weight:600; cursor:pointer; margin-top:12px; }
+  button:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:#fff; color:var(--text); border:1px solid var(--border); }
+  button.small { margin:0; padding:2px 10px; font-size:12px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; }
+  .b-queued { background:#f4f4f5; color:#52525b; }
+  .b-running { background:#dbeafe; color:#1d4ed8; }
+  .b-need_captcha { background:#fef3c7; color:#b45309; }
+  .b-done { background:#dcfce7; color:#15803d; }
+  .b-failed { background:#fee2e2; color:#b91c1c; }
+  .task, .acct { border-top:1px solid var(--border); padding:10px 0; }
+  .task:first-of-type, .acct:first-of-type { border-top:0; }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .meta { color:var(--muted); font-size:12px; }
+  .progress { height:6px; background:#f4f4f5; border-radius:99px; overflow:hidden; margin-top:6px; }
+  .progress i { display:block; height:100%; background:var(--accent); transition:width .4s; }
+  .logs { background:#18181b; color:#d4d4d8; font:11px/1.5 ui-monospace,Menlo,monospace;
+          border-radius:8px; padding:8px; margin-top:8px; max-height:180px; overflow:auto;
+          white-space:pre-wrap; word-break:break-all; }
+  .captcha-box { background:#fef3c7; border-radius:8px; padding:10px; margin-top:8px; font-size:13px; }
+  .captcha-box a { color:#b45309; word-break:break-all; }
+  .mon-box { background:#eff6ff; border-radius:8px; padding:8px 10px; margin-top:8px;
+             font-size:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .mon-box.err { background:#fee2e2; }
+  .mon-box select { width:auto; padding:2px 6px; font-size:12px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#22c55e; display:inline-block;
+         animation:pulse 1.5s infinite; }
+  .dot.err { background:#ef4444; animation:none; }
+  .dot.warn { background:#f59e0b; animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border);
+           vertical-align:top; }
+  th { color:var(--muted); font-weight:500; white-space:nowrap; }
+  td.t { white-space:nowrap; color:var(--muted); }
+  td.num { white-space:nowrap; text-align:right; }
+  .text { word-break:break-word; max-width:480px; }
+  .rt { color:var(--muted); font-size:12px; }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:12px; }
+  .pager button { margin-top:0; padding:4px 14px; }
+  .usercard { display:flex; gap:12px; align-items:center; }
+  .usercard img { width:48px; height:48px; border-radius:50%; }
+  .usercard .stats { color:var(--muted); font-size:12px; }
+  .empty { color:var(--muted); text-align:center; padding:24px 0; }
+  .hidden { display:none; }
+  h2 { font-size:15px; margin-bottom:10px; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .live { font-size:12px; color:#15803d; }
+  .cd { color:#b45309; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="logo">微博</span>历史采集</h1>
+  <div class="sub">仅本地使用 · 只采集公开内容 · 请控制频率，遵守微博服务条款</div>
+
+  <div class="card">
+    <h2>新建采集任务</h2>
+    <label>user_id（数字 UID）</label>
+    <input id="uid" placeholder="例如 2803301701（微博主页 m.weibo.cn/u/数字 里的数字）">
+    <div id="uid-status" class="hint"></div>
+    <label>Cookie（必需）</label>
+    <textarea id="cookie" placeholder="SCF=...; SUB=...; SUBP=...; ALF=...; SSOLoginState=..."></textarea>
+    <div class="hint">获取方式：Chrome 登录 m.weibo.cn → F12 → Network → 刷新 → 点第一个请求 →
+      Request Headers → 复制 cookie 整串值。开启监控时若提示缺 Cookie，也会读取这里填的值。</div>
+    <button id="submit" onclick="submitTask()">开始采集</button>
+    <button class="ghost" style="margin-left:8px" id="browser-login"
+      onclick="startBrowserLogin()">浏览器登录自动获取 Cookie</button>
+    <div id="bl-status" class="hint"></div>
+    <span id="form-msg" class="hint"></span>
+  </div>
+
+  <div class="card">
+    <h2>已采集账号</h2>
+    <div id="accounts"><div class="empty">还没有数据，先运行一次采集</div></div>
+  </div>
+
+  <div class="card">
+    <h2>任务列表</h2>
+    <div id="tasks"><div class="empty">暂无任务</div></div>
+  </div>
+
+  <div class="card hidden" id="result-card">
+    <div class="toolbar">
+      <h2 id="result-title">采集结果</h2>
+      <span class="live" id="live-mark"></span>
+      <button class="ghost" onclick="hideResult()">收起</button>
+    </div>
+    <div class="usercard hidden" id="user-card"></div>
+    <table>
+      <thead><tr>
+        <th style="width:130px">时间</th><th>正文</th>
+        <th class="num">转</th><th class="num">评</th><th class="num">赞</th>
+        <th style="width:110px">来源</th>
+      </tr></thead>
+      <tbody id="weibo-body"></tbody>
+    </table>
+    <div class="pager">
+      <button class="ghost" id="prev" onclick="turnPage(-1)">上一页</button>
+      <span id="pageinfo" class="meta"></span>
+      <button class="ghost" id="next" onclick="turnPage(1)">下一页</button>
+      <a id="download" href="#" download><button class="ghost">下载 CSV</button></a>
+    </div>
+  </div>
+</div>
+
+<script>
+let curUid = null, curPage = 1, curSize = 20, curTotal = 0, resultTimer = null;
+const $ = id => document.getElementById(id);
+const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function submitTask() {
+  const uid = $('uid').value.trim(), cookie = $('cookie').value.trim();
+  const msg = $('form-msg');
+  if (!uid) { msg.textContent = '请填 user_id'; return; }
+  if (!cookie) { msg.textContent = '微博现在强制登录，必须填 Cookie（匿名已无法访问）'; return; }
+  $('submit').disabled = true;
+  try {
+    const r = await fetch('/api/collect', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user_id: uid, cookie})});
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = j.detail || '提交失败'; return; }
+    msg.textContent = '已创建任务 ' + j.task_id;
+    refreshTasks(); refreshAccounts();
+  } catch(e) { msg.textContent = '网络错误：' + e; }
+  finally { $('submit').disabled = false; }
+}
+
+async function resumeTask(id) {
+  await fetch(`/api/tasks/${id}/resume`, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:'{}'});
+  refreshTasks();
+}
+
+/* ---------- 账号 ---------- */
+
+let accountsCache = [];
+async function refreshAccounts() {
+  const r = await fetch('/api/accounts');
+  const list = await r.json();
+  accountsCache = list;
+  if (!list.length) { $('accounts').innerHTML = '<div class="empty">还没有数据，先运行一次采集</div>'; return; }
+  $('accounts').innerHTML = list.map(a => {
+    const m = a.monitor;
+    let mon = '';
+    if (m) {
+      const iv = m.interval >= 3600 ? (m.interval/3600)+'小时' : (m.interval >= 60 ? (m.interval/60)+'分钟' : m.interval+'秒');
+      if (m.status === 'captcha') {
+        mon = `<div class="mon-box err"><span class="dot err"></span>监控被风控拦截
+          <a href="${m.error}" target="_blank">去验证</a>
+          <button class="small ghost" onclick="startMonitor('${a.uid}', true)">验证后重新开启</button>
+          <div class="hint" style="flex-basis:100%">重新开启会先冷却再检查；频繁被拦截请换新 Cookie</div></div>`;
+      } else if (m.status === 'error') {
+        mon = `<div class="mon-box err"><span class="dot err"></span>监控出错：${esc(m.error)}
+          <button class="small ghost" onclick="startMonitor('${a.uid}', true)">重试</button></div>`;
+      } else {
+        mon = `<div class="mon-box"><span class="dot"></span>监控中（每 ${iv}）
+          · 上次检查 ${m.last_check || '-'} · 本次新增 ${m.last_new} · 累计新增 ${m.total_new}
+          <button class="small ghost" onclick="stopMonitor('${a.uid}')">停止监控</button></div>`;
+      }
+    } else {
+      mon = `<div class="mon-box">
+        <span class="meta">监控新微博：</span>
+        <select id="iv-${a.uid}">
+          <option value="60">每 1 分钟</option>
+          <option value="300" selected>每 5 分钟</option>
+          <option value="900">每 15 分钟</option>
+          <option value="1800">每 30 分钟</option>
+        </select>
+        <button class="small" onclick="startMonitor('${a.uid}')">开启监控</button>
+        <span class="meta">（低于 1 分钟会被微博风控，已禁用）</span></div>`;
+    }
+    const r = a.resume || {};
+    const done = r.completed === '1';
+    const resumeTxt = (r.last_page || r.completed)
+      ? `· ${done ? '已采完（可增量追新）' : `断点第 ${r.last_page || '?'} 页（未采完）`}`
+      : '';
+    const banTxt = r.ban_count > 0 ? `· 近期风控 ${r.ban_count} 次` : '';
+    return `<div class="acct">
+      <div class="row">
+        <b>${esc(a.screen_name) || a.uid}</b>
+        <span class="meta">${a.count}${a.statuses_count ? '/' + a.statuses_count : ''} 条
+          ${a.last_weibo_at ? '· 最新 ' + a.last_weibo_at : ''} ${resumeTxt} ${banTxt}</span>
+        <button class="small" onclick="continueCollect('${a.uid}')"
+          ${a.task_running ? 'disabled title="已有任务进行中"' : ''}>继续采集</button>
+        <button class="small ghost" onclick="openAccount('${a.uid}')">查看</button>
+        <a href="/api/accounts/${a.uid}/export" download><button class="small ghost">CSV</button></a>
+        <button class="small ghost" style="color:#b91c1c;border-color:#fecaca"
+          onclick="deleteAccount('${a.uid}', this)">删除</button>
+      </div>${mon}</div>`;
+  }).join('');
+}
+
+/* 一键断点续采：采集前做校验并展示采集历史 */
+async function continueCollect(uid) {
+  const a = accountsCache.find(x => x.uid === uid);
+  if (!a) return;
+  // 校验 1：是否已有任务在跑
+  if (a.task_running) { alert('该账号已有采集任务在排队/进行中，请看任务列表'); return; }
+  // 校验 2：Cookie 可用性
+  const cookie = $('cookie').value.trim();
+  const r = a.resume || {};
+  if (!cookie && !r.cookie_saved) {
+    alert('没有可用的 Cookie：请先在上方 Cookie 框粘贴 Cookie，再点继续采集');
+    $('cookie').focus();
+    return;
+  }
+  // 校验 3：展示采集历史，人工确认
+  const bans = r.ban_count || 0;
+  const cooldownMin = bans > 0 ? Math.min(120 * 2 ** (bans - 1), 900) / 60 : 0;
+  const done = r.completed === '1';
+  const msg =
+    `—— 采集前校验 ——\n` +
+    `账号：${a.screen_name || uid}\n` +
+    `已采 ${a.count}${a.statuses_count ? '/' + a.statuses_count : ''} 条\n` +
+    (done ? `上次已采完：本次为增量追新（只抓新微博）\n`
+          : `上次采到第 ${r.last_page || '?'} 页（未采完）：将从断点附近续采\n`) +
+    (bans > 0 ? `近期触发过 ${bans} 次风控：开始前将先冷却 ${cooldownMin} 分钟\n` : '') +
+    `采集期间该账号的监控会自动暂停\n` +
+    `Cookie：${cookie ? '用你刚粘贴的' : '用已保存的'}\n\n确定开始？`;
+  if (!confirm(msg)) return;
+  const resp = await fetch(`/api/accounts/${uid}/continue`, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({cookie})});
+  if (!resp.ok) {
+    const j = await resp.json().catch(() => ({}));
+    alert(j.detail || '创建失败');
+    return;
+  }
+  refreshTasks(); refreshAccounts();
+}
+
+async function startMonitor(uid, reuseCookie) {
+  const interval = $('iv-' + uid) ? +$('iv-' + uid).value : 300;
+  const cookie = $('cookie').value.trim();
+  const r = await fetch(`/api/accounts/${uid}/monitor`, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({interval_seconds: interval, cookie: reuseCookie ? '' : cookie})});
+  if (!r.ok) {
+    const j = await r.json();
+    alert((j.detail || '开启失败') + (String(j.detail).includes('Cookie') ? '：请先在上面 Cookie 框粘贴 Cookie 再点开启' : ''));
+  }
+  refreshAccounts();
+}
+async function stopMonitor(uid) {
+  await fetch(`/api/accounts/${uid}/monitor`, {method:'DELETE'});
+  refreshAccounts();
+}
+async function deleteAccount(uid, btn) {
+  if (!confirm(`确定删除账号 ${uid} 的全部本地采集数据？此操作不可恢复。`)) return;
+  btn.disabled = true;
+  await fetch(`/api/accounts/${uid}`, {method:'DELETE'});
+  if (curUid === uid) hideResult();
+  refreshAccounts();
+}
+
+/* 表单里识别以前采集过的账号 */
+function updateUidStatus() {
+  const uid = $('uid').value.trim();
+  const el = $('uid-status');
+  if (!/^\d+$/.test(uid)) { el.textContent = ''; return; }
+  const a = accountsCache.find(x => x.uid === uid);
+  el.textContent = a
+    ? `✅ 该账号以前采集过：已采 ${a.count}${a.statuses_count ? '/' + a.statuses_count : ''} 条${a.last_weibo_at ? '，最新一条 ' + a.last_weibo_at : ''}。提交任务会自动去重续采；也可点下方「查看」直接浏览。`
+    : '该账号还没有采集记录，提交后将全量采集。';
+}
+
+/* 浏览器登录自动获取 Cookie */
+let blTimer = null;
+async function startBrowserLogin() {
+  const btn = $('browser-login');
+  const st = $('bl-status');
+  btn.disabled = true;
+  st.textContent = '正在打开浏览器窗口…';
+  try {
+    const r = await fetch('/api/cookie/browser', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({target_uid: $('uid').value.trim()})});
+    const j = await r.json();
+    if (!r.ok) { st.textContent = j.detail || '启动失败'; btn.disabled = false; return; }
+    const sid = j.sid;
+    clearInterval(blTimer);
+    blTimer = setInterval(async () => {
+      const s = await (await fetch(`/api/cookie/browser/${sid}`)).json();
+      if (s.status === 'launching') { st.textContent = '正在打开浏览器窗口…'; return; }
+      if (s.status === 'waiting') {
+        st.innerHTML = '⏳ ' + (s.note || '浏览器窗口已打开') +
+          '，请在<b>弹出的窗口里登录微博</b>（扫码或账密均可），登录成功会自动填入 ' +
+          '<button class="small ghost" onclick="cancelBrowserLogin(\'' + sid +
+          '\')">取消</button>';
+        return;
+      }
+      clearInterval(blTimer);
+      btn.disabled = false;
+      if (s.status === 'success') {
+        $('cookie').value = s.cookie;
+        if (s.uid && !$('uid').value.trim()) $('uid').value = s.uid;
+        updateUidStatus();
+        st.textContent = `✅ Cookie 已自动填入（登录账号 uid=${s.uid}），并已保存供续采/监控复用`;
+      } else {
+        st.textContent = '❌ ' + (s.error || '获取失败，请重试');
+      }
+    }, 2000);
+  } catch (e) {
+    st.textContent = '网络错误：' + e;
+    btn.disabled = false;
+  }
+}
+
+async function cancelBrowserLogin(sid) {
+  await fetch(`/api/cookie/browser/${sid}`, {method:'DELETE'});
+}
+
+/* ---------- 结果视图（按 uid，实时自刷新） ---------- */
+
+async function openAccount(uid) {
+  curUid = uid; curPage = 1;
+  $('result-card').classList.remove('hidden');
+  $('download').href = `/api/accounts/${uid}/export`;
+  await loadWeibos();
+  $('result-card').scrollIntoView({behavior:'smooth'});
+  clearInterval(resultTimer);
+  resultTimer = setInterval(loadWeibos, 5000);  // 每 5 秒自动刷新
+}
+function hideResult() {
+  $('result-card').classList.add('hidden');
+  clearInterval(resultTimer); resultTimer = null; curUid = null;
+}
+
+async function loadWeibos() {
+  if (!curUid) return;
+  const r = await fetch(`/api/accounts/${curUid}/weibos?page=${curPage}&size=${curSize}`);
+  if (!r.ok) return;
+  const j = await r.json();
+  curTotal = j.total;
+  const u = j.user;
+  if (u) {
+    $('user-card').classList.remove('hidden');
+    $('user-card').innerHTML = `
+      <img src="${(u.avatar_hd||u.profile_image_url||'').replace(/^http:/,'https:')}"
+           onerror="this.style.display='none'">
+      <div><b>${esc(u.screen_name)}</b> ${u.verified ? '✅' : ''}
+        <div class="stats">已采 ${j.total}${u.statuses_count ? '/' + u.statuses_count : ''} ·
+        粉丝 ${u.followers_count} · 关注 ${u.follow_count}
+        ${u.ip_location ? ' · IP ' + u.ip_location : ''}</div></div>`;
+    $('result-title').textContent = `采集结果 — ${u.screen_name}`;
+  }
+  $('weibo-body').innerHTML = j.weibos.map(w => `
+    <tr>
+      <td class="t">${w.created_at}</td>
+      <td class="text">${esc(w.text)}
+        ${w.is_retweet ? `<div class="rt">转发 @${esc(w.retweet_user)}：${esc(w.retweet_text).slice(0,80)}…</div>` : ''}
+        ${w.pic_urls ? `<div class="rt">🖼️ ${w.pic_urls.split(',').length} 张图</div>` : ''}
+        ${w.video_url ? '<div class="rt">🎬 视频</div>' : ''}</td>
+      <td class="num">${w.reposts_count}</td>
+      <td class="num">${w.comments_count}</td>
+      <td class="num">${w.attitudes_count}</td>
+      <td class="t">${esc(w.source)}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">还没有数据</td></tr>';
+  const pages = Math.max(1, Math.ceil(curTotal / curSize));
+  $('pageinfo').textContent = `${curPage} / ${pages} 页，共 ${curTotal} 条`;
+  $('prev').disabled = curPage <= 1;
+  $('next').disabled = curPage >= pages;
+  $('live-mark').textContent = '● 每 5 秒自动刷新 · ' + new Date().toLocaleTimeString();
+}
+
+function turnPage(d) { curPage += d; loadWeibos(); }
+
+/* ---------- 任务列表 ---------- */
+
+async function refreshTasks() {
+  const r = await fetch('/api/tasks');
+  const list = await r.json();
+  if (!list.length) { $('tasks').innerHTML = '<div class="empty">暂无任务</div>'; return; }
+  $('tasks').innerHTML = list.map(t => {
+    const stateName = {queued:'排队中', running:'采集中', need_captcha:'需人工验证',
+                       done:'完成', failed:'失败'}[t.state] || t.state;
+    const p = t.state === 'running' && t.total
+      ? `<div class="progress"><i style="width:${t.progress}%"></i></div>`
+      : '';
+    const captcha = t.state === 'need_captcha'
+      ? `<div class="captcha-box">触发了风控。请点开
+           <a href="${t.captcha_url}" target="_blank">验证页面</a>
+           在浏览器里完成验证，然后
+           <button class="small" onclick="resumeTask('${t.id}')">继续采集</button>
+           <div class="hint">点继续后会自动冷却几分钟再开始（触发次数越多冷却越长，2→4→8…分钟）。
+             频繁触发建议：换常用浏览器完整重新登录微博、复制新 Cookie 再继续；工具已自动放慢请求节奏。</div>
+         </div>`
+      : '';
+    const logs = `<div class="logs" id="logs-${t.id}">${(t.logs||[]).join('\n')}</div>`;
+    const view = ['running','need_captcha','done'].includes(t.state)
+      ? `<button class="small ghost" onclick="openAccount('${t.user_id}')">
+           ${t.state === 'done' ? '查看结果' : '实时查看'}</button>`
+      : '';
+    const act = t.action
+      ? `<span class="meta">⚙ ${esc(t.action)}${t.action_until > 0
+          ? ` <b class="cd" data-until="${t.action_until}"></b>` : ''}</span>`
+      : '';
+    return `<div class="task">
+      <div class="row">
+        <b>${esc(t.screen_name) || t.user_id}</b>
+        <span class="badge b-${t.state}">${stateName}</span>
+        <span class="meta">${t.collected}/${t.total || '?'} 条 · 第 ${t.page} 页 · ${t.created_at}</span>
+        ${act}
+        <button class="small ghost" onclick="toggleLogs('${t.id}')">日志</button>
+        ${view}
+      </div>${p}${captcha}${logs}
+      ${t.state === 'failed' && t.error ? `<div class="hint">${t.error}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* 冷却/休息倒计时，每秒本地刷新 */
+function fmtRemain(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? `${m}分${String(s).padStart(2,'0')}秒` : `${s}秒`;
+}
+setInterval(() => {
+  const now = Date.now() / 1000;
+  document.querySelectorAll('.cd[data-until]').forEach(el => {
+    const until = +el.dataset.until;
+    el.textContent = until > now ? '剩余 ' + fmtRemain(Math.ceil(until - now)) : '';
+  });
+}, 1000);
+
+function toggleLogs(id) {
+  const el = $('logs-' + id);
+  const collapsed = el.dataset.c === '1';
+  el.style.display = collapsed ? 'block' : 'none';
+  el.dataset.c = collapsed ? '0' : '1';
+}
+
+refreshAccounts(); refreshTasks();
+setInterval(refreshTasks, 3000);
+setInterval(refreshAccounts, 5000);
+$('uid').addEventListener('input', updateUidStatus);
+</script>
+</body>
+</html>

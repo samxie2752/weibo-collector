@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""账号监控：后台定时检查已采集账号的时间线，新微博自动入库。
+
+每个账号一个守护线程，每轮用增量模式采集器（连续 2 页无新内容即追平），
+只抓公开时间线头部。间隔下限 60 秒——更高的频率会触发微博风控。
+Cookie 持久化在 data/{uid}/cookie.txt（data/ 已 gitignore），服务重启后自动恢复监控。
+"""
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time
+from datetime import datetime
+from typing import Dict, Optional
+
+from . import crawler
+from .store import DATA_DIR, Store
+
+log = logging.getLogger("weibo.monitor")
+
+MIN_INTERVAL = 60          # 秒，服务端强制下限
+SEEN_STOP_PAGES = 2        # 连续 N 页无新内容视为已追平
+
+
+def cookie_path(uid: str) -> str:
+    return os.path.join(DATA_DIR, str(uid), "cookie.txt")
+
+
+def check_once(uid: str, cookie: str, store: Optional[Store] = None,
+               collector: Optional[crawler.WeiboCollector] = None) -> int:
+    """单轮检查：增量抓取新微博入库，返回新增条数。
+
+    store/collector 可注入以便离线测试；默认自行构造。
+    """
+    own = store is None
+    store = store or Store(uid)
+    try:
+        if collector is None:
+            collector = crawler.WeiboCollector(uid, cookie,
+                                               stop_on_seen_pages=SEEN_STOP_PAGES)
+            collector.seen_ids = {
+                r[0] for r in store._conn.execute(
+                    "SELECT bid FROM weibo WHERE user_id=?",
+                    (uid,)).fetchall()}
+        count = 0
+        for wb in collector.iter_weibos():
+            store.save_weibo(wb)
+            count += 1
+        return count
+    finally:
+        if own:
+            store.close()
+
+
+class MonitorState:
+    def __init__(self, uid: str, interval: int):
+        self.uid = uid
+        self.interval = interval
+        self.running = True
+        self.paused = False        # 采集任务运行期间暂停检查，避免请求叠加
+        self.status = "running"    # running / captcha / error
+        self.last_check = ""
+        self.last_new = 0
+        self.total_new = 0
+        self.error = ""
+
+    def info(self) -> Dict:
+        return {
+            "uid": self.uid, "interval": self.interval,
+            "status": self.status, "running": self.running,
+            "last_check": self.last_check, "last_new": self.last_new,
+            "total_new": self.total_new, "error": self.error,
+        }
+
+
+class MonitorManager:
+    def __init__(self):
+        self.states: Dict[str, MonitorState] = {}
+        self._threads: Dict[str, threading.Thread] = {}
+        self._lock = threading.Lock()
+
+    # ---------- 对外接口 ----------
+
+    def start(self, uid: str, interval: int, cookie: str = "") -> MonitorState:
+        interval = max(MIN_INTERVAL, int(interval))
+        if cookie.strip():
+            self._save_cookie(uid, cookie.strip())
+        elif not os.path.exists(cookie_path(uid)):
+            raise ValueError("需要提供 Cookie（或该账号此前已保存过）")
+        with self._lock:
+            old = self.states.get(uid)
+            if old:
+                old.running = False
+            st = MonitorState(uid, interval)
+            self.states[uid] = st
+            t = threading.Thread(target=self._loop, args=(st,), daemon=True,
+                                 name=f"monitor-{uid}")
+            self._threads[uid] = t
+            t.start()
+        s = Store(uid)
+        s.set_meta("monitor_interval", str(interval))
+        s.close()
+        return st
+
+    def stop(self, uid: str):
+        with self._lock:
+            st = self.states.pop(uid, None)
+        if st:
+            st.running = False
+            log.info("monitor %s stopped", uid)
+
+    def info(self, uid: str) -> Optional[Dict]:
+        st = self.states.get(uid)
+        return st.info() if st else None
+
+    def pause(self, uid: str):
+        st = self.states.get(uid)
+        if st:
+            st.paused = True
+
+    def unpause(self, uid: str):
+        st = self.states.get(uid)
+        if st:
+            st.paused = False
+
+    def auto_resume(self):
+        """服务启动时恢复监控（有 cookie.txt 且 meta 里有 interval 的账号）。"""
+        if not os.path.isdir(DATA_DIR):
+            return
+        for uid in os.listdir(DATA_DIR):
+            if not os.path.exists(cookie_path(uid)):
+                continue
+            try:
+                s = Store(uid)
+                interval = s.get_meta("monitor_interval")
+                s.close()
+                if interval.isdigit():
+                    st = self.start(uid, int(interval))
+                    log.info("monitor %s resumed (every %ss)", uid, st.interval)
+            except Exception as e:
+                log.warning("monitor %s resume failed: %s", uid, e)
+
+    # ---------- 内部 ----------
+
+    def _load_cookie(self, uid: str) -> str:
+        try:
+            with open(cookie_path(uid), encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    def _save_cookie(self, uid: str, cookie: str):
+        os.makedirs(os.path.dirname(cookie_path(uid)), exist_ok=True)
+        with open(cookie_path(uid), "w", encoding="utf-8") as f:
+            f.write(cookie)
+
+    def _loop(self, st: MonitorState):
+        while st.running:
+            # 被采集任务暂停期间不发起任何请求
+            while st.paused and st.running:
+                time.sleep(2)
+            if not st.running:
+                return
+            try:
+                cookie = self._load_cookie(st.uid)
+                if not cookie:
+                    st.status = "error"
+                    st.error = "Cookie 丢失，请重新开启监控并填写 Cookie"
+                    break
+                st.last_check = datetime.now().strftime("%m-%d %H:%M:%S")
+                new = check_once(st.uid, cookie)
+                st.last_new = new
+                st.total_new += new
+                st.status = "running"
+                st.error = ""
+                if new:
+                    log.info("monitor %s: +%d new weibos", st.uid, new)
+            except crawler.NeedCaptchaError as e:
+                st.status = "captcha"
+                st.error = e.url
+                log.warning("monitor %s hit captcha: %s", st.uid, e.url)
+                break  # 停线程等人工处理，避免反复撞墙
+            except Exception as e:
+                st.status = "error"
+                st.error = f"{type(e).__name__}: {e}"
+                log.warning("monitor %s error: %s", st.uid, e)
+            # 分片睡眠，保证 stop() 能及时响应
+            for _ in range(0, st.interval, 2):
+                if not st.running:
+                    return
+                time.sleep(2)
+
+
+manager = MonitorManager()

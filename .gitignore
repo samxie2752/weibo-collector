@@ -1,0 +1,11 @@
+# 采集数据与任务工作目录（含 Cookie 和个人数据，绝不入库）
+data/
+# 参考用的开源项目克隆
+reference/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# playwright 产物
+test-results/
+playwright-report/
