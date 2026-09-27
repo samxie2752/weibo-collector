@@ -7,7 +7,7 @@
 
 本地 Web 小工具：填入 user_id，自动抓取任意公开微博账号的**全部历史微博**，存入本地 SQLite，页面上实时查看采集进度与内容，支持断点续采、增量更新、后台监控新微博、一键导出 CSV。
 
-> ⚠️ **合规声明**：本项目仅用于个人备份与学习研究，只采集公开可见内容，不做任何登录凭据破解或反爬绕过。使用请遵守《微博服务使用协议》及相关法律法规，自行控制频率，勿用于商业用途。本项目与微博官方无关，产生的数据请勿二次分发。
+> ⚠️ **合规声明**：本项目仅用于个人备份与学习研究，只采集公开可见内容，禁止商业用途与大规模/高频爬取，采集的数据请勿二次分发。完整条款见[免责声明](#免责声明-disclaimer)。本项目与微博官方无关。
 
 ## 界面
 
@@ -121,6 +121,17 @@ scripts/selftest.py 离线自测（mock HTTP，50 项断言，CI 跑的就是它
 - Cookie 有效期约 3 个月，失效后换新即可（工具会停在验证状态引导你）
 - 历史很久的账号全量采集约 1.5~2.5 小时（页间延迟是刻意的防封措施）
 
+## 免责声明 Disclaimer
+
+1. **项目性质**：本项目是网络数据采集技术的学习与研究工具，仅供个人备份公开信息与技术交流之用。使用本项目即视为已阅读并同意本声明的全部内容。
+2. **法律合规**：使用本项目须严格遵守《中华人民共和国网络安全法》《数据安全法》《个人信息保护法》及《微博服务使用协议》等法律法规与平台规则。任何因使用不当引起的法律责任由使用者自行承担。
+3. **使用限制**：严禁将本项目用于商业用途、大规模或高频次爬取、绕过或破坏平台技术措施、侵犯他人知识产权及其他合法权益；严禁将采集的数据转售或二次分发。本项目内置的限速机制仅为礼貌性降低服务负担的设计，不构成规避平台风控的授权。
+4. **账号风险**：使用采集工具可能导致账号被平台限制或封禁，该风险由使用者自行评估并承担。
+5. **免责范围**：项目按"现状"提供（详见 [MIT License](LICENSE)）。对于使用本项目造成的任何直接或间接损失（包括但不限于数据丢失、账号封禁、法律纠纷），项目作者及贡献者不承担责任。
+6. **声明变更**：本声明可能随时更新，恕不另行通知，更新后发布于本仓库即生效。
+
+本工具与微博/新浪官方无任何关联。
+
 ## English
 
 **weibo-collector** is a local web tool for backing up the complete public post history of any Weibo account.
@@ -131,6 +142,8 @@ scripts/selftest.py 离线自测（mock HTTP，50 项断言，CI 跑的就是它
 - 100% local: the server only binds 127.0.0.1 and your cookie never leaves the machine.
 
 Quick start: `pip install -r requirements.txt`, run `uvicorn app.main:app`, open `http://127.0.0.1:8765`. See [快速开始](#快速开始) for details. Licensed under [MIT](LICENSE) — for personal backup and research only.
+
+**Disclaimer**: This project is for personal backup and technical research only. It must not be used for commercial purposes, mass or high-frequency scraping, circumventing platform technical measures, or redistributing collected data. Crawling may cause account restrictions — use at your own risk. Users must comply with applicable laws and Weibo's Terms of Service. The authors and contributors are not liable for any direct or indirect losses arising from its use. See the [Chinese disclaimer](#免责声明-disclaimer) for the full text.
 
 ## 致谢
 
