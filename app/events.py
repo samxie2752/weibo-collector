@@ -50,11 +50,14 @@ def dispatch_new_weibos(store: Store, uid: str,
     """
     if not weibos:
         return
+    # 博主昵称从库内 user 表读（不硬编码，仓库公开也不暴露监控对象）
+    u = store.get_user() or {}
+    name = u.get("screen_name") or uid
     for w in weibos[:3]:  # 单轮最多处理 3 条，防刷屏
         # (a) 快通道：原文秒推
         snippet = (w.get("text") or "")[:80].replace("\n", " ")
         tg_send(store,
-                f"🔔 金本位元帅 发新微博（{datetime.now():%H:%M}）\n"
+                f"🔔 {name} 发新微博（{datetime.now():%H:%M}）\n"
                 f"{snippet}…\n"
                 f"分析中，决策卡片随后到 →")
         # (b) 分析通道：insight webhook
