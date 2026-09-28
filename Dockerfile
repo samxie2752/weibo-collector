@@ -8,8 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY static ./static
 
-# 注意：容器内不带 Playwright，"浏览器登录自动获取 Cookie"功能请在宿主机使用；
-# 容器场景下直接把 Cookie 粘贴进页面即可。
+# 容器内不含 Playwright："浏览器登录获取 Cookie"请在宿主机使用，
+# 或直接把 Cookie 粘贴进页面。数据持久化依赖 volume 挂载 /app/data。
 
 EXPOSE 8765
 
