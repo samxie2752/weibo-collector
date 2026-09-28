@@ -12,9 +12,10 @@ import os
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from . import crawler
+from . import events as events_mod
 from . import media as media_mod
 from .store import DATA_DIR, Store
 
@@ -29,8 +30,8 @@ def cookie_path(uid: str) -> str:
 
 
 def check_once(uid: str, cookie: str, store: Optional[Store] = None,
-               collector: Optional[crawler.WeiboCollector] = None) -> int:
-    """单轮检查：增量抓取新微博入库，返回新增条数。
+               collector: Optional[crawler.WeiboCollector] = None) -> List[Dict]:
+    """单轮检查：增量抓取新微博入库，返回新增微博明细列表。
 
     store/collector 可注入以便离线测试；默认自行构造。
     """
@@ -44,11 +45,12 @@ def check_once(uid: str, cookie: str, store: Optional[Store] = None,
                 r[0] for r in store._conn.execute(
                     "SELECT bid FROM weibo WHERE user_id=?",
                     (uid,)).fetchall()}
-        count = 0
+        fresh: List[Dict] = []
         for wb in collector.iter_weibos():
             store.save_weibo(wb)
-            count += 1
-        return count
+            fresh.append({"bid": wb["bid"], "created_at": wb["created_at"],
+                          "text": wb["text"]})
+        return fresh
     finally:
         if own:
             store.close()
@@ -170,26 +172,40 @@ class MonitorManager:
                     st.error = "Cookie 丢失，请重新开启监控并填写 Cookie"
                     break
                 st.last_check = datetime.now().strftime("%m-%d %H:%M:%S")
-                new = check_once(st.uid, cookie)
-                st.last_new = new
-                st.total_new += new
+                fresh = check_once(st.uid, cookie)
+                st.last_new = len(fresh)
+                st.total_new += len(fresh)
                 st.status = "running"
                 st.error = ""
-                if new:
-                    log.info("monitor %s: +%d new weibos", st.uid, new)
+                st.backoff_until = 0.0  # 成功即解除退避
+                if fresh:
+                    log.info("monitor %s: +%d new weibos", st.uid, len(fresh))
+                    # 事件驱动：快推 + insight 分析联动（异常不影响监控主流程）
+                    try:
+                        events_mod.dispatch_new_weibos(
+                            Store(st.uid), st.uid, fresh)
+                    except Exception as e:
+                        log.warning("dispatch events: %s", e)
                     # 全自动备份闭环：新微博入库后自动补下载其图片
                     media_mod.manager.start(st.uid)
             except crawler.NeedCaptchaError as e:
-                st.status = "captcha"
-                st.error = e.url
-                log.warning("monitor %s hit captcha: %s", st.uid, e.url)
-                break  # 停线程等人工处理，避免反复撞墙
+                # 60s 轮询的自动退避：风控信号 → 180s 持续 30 分钟后恢复
+                now = time.time()
+                if now - getattr(st, "backoff_until", 0.0) > 0:
+                    st.interval_slow = 180
+                    st.backoff_until = now + 1800
+                    log.warning("monitor %s 风控，退避 180s×30min", st.uid)
+                st.status = "captcha_cooldown"
+                st.error = f"风控退避中（180s）: {e.url[:80]}"
             except Exception as e:
                 st.status = "error"
                 st.error = f"{type(e).__name__}: {e}"
                 log.warning("monitor %s error: %s", st.uid, e)
-            # 分片睡眠，保证 stop() 能及时响应
-            for _ in range(0, st.interval, 2):
+            # 分片睡眠；风控退避期间用 180s
+            sleep_s = st.interval
+            if getattr(st, "backoff_until", 0.0) > time.time():
+                sleep_s = 180
+            for _ in range(0, sleep_s, 2):
                 if not st.running:
                     return
                 time.sleep(2)

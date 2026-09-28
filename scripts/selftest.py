@@ -188,7 +188,9 @@ class MockCollector:
 
 mc = MockCollector()
 new = monitor_mod.check_once("777", "SUB=x", store=s2, collector=mc)
-check("check_once 新微博入库并返回条数", new == 2 and s2.count_weibos() == 3)
+check("check_once 新微博入库并返回明细列表",
+      bool(isinstance(new, list) and len(new) == 2 and s2.count_weibos() == 3
+           and new[0]["bid"] and new[0]["text"]))
 
 # 生产路径：collector=None 时自行构造采集器并加载库内已见 id
 class FakeCtor:
@@ -208,7 +210,7 @@ finally:
     monitor_mod.crawler.WeiboCollector = orig_ctor
 seen, stop = FakeCtor.last
 check("check_once 生产路径：加载已见id + 增量模式",
-      new2 == 0 and {"B2", "B1", "BP"} <= seen and stop == 2)
+      new2 == [] and {"B2", "B1", "BP"} <= seen and stop == 2)
 check("check_once 设置增量追平参数", monitor_mod.SEEN_STOP_PAGES == 2)
 check("cookie 路径在 data/ 下", monitor_mod.cookie_path("777").endswith("777/cookie.txt"))
 s2.close()
